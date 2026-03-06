@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+</head>
+<body>
+    <h1>Test grafu</h1>
+    <canvas id="myChart" width="800" height="400"></canvas>
+    <script>
+        const hours = ["01:00","02:00","03:00","04:00","05:00"];
+        const prices = [2.73, 2.71, 2.72, 2.77, 3.16];
+
+        const ctx = document.getElementById('myChart').getContext('2d');
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: hours,
+                datasets: [{
+                    label: 'Kč/kWh',
+                    data: prices,
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    </script>
+</body>
+</html>
