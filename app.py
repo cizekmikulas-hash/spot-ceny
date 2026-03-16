@@ -1,4 +1,5 @@
 import requests
+import pytz
 from datetime import datetime
 from flask import Flask, render_template_string
 
@@ -31,7 +32,8 @@ def home():
     response = requests.get(URL)
     data = response.json()
 
-    now = datetime.now()
+    tz = pytz.timezone("Europe/Prague")
+    now = datetime.now(tz).replace(tzinfo=None)
     current_hour = now.hour
 
     # předvýpočet min/max pro celou škálu
