@@ -99,24 +99,36 @@ def home():
     <html>
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Spotové ceny</title>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
         <style>
-            body { font-family: Arial, sans-serif; text-align: center; background: #f5f5f5; margin: 0; padding: 20px; }
-            h1 { color: #333; }
+            * { box-sizing: border-box; }
 
-            canvas {
-                max-width: 95%;
-                margin: 20px auto;
+            body { font-family: Arial, sans-serif; text-align: center; background: #f5f5f5; margin: 0; padding: 12px; }
+            h1 { color: #333; font-size: clamp(16px, 5vw, 24px); margin: 10px 0 16px; }
+
+            .chart-wrapper {
+                position: relative;
+                width: 100%;
+                max-width: 900px;
+                height: 320px;
+                margin: 0 auto 20px;
                 background: white;
                 border-radius: 8px;
                 padding: 10px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+
+            @media (max-width: 480px) {
+                .chart-wrapper { height: 220px; }
             }
 
             .table-wrapper {
+                width: 100%;
                 max-width: 500px;
-                margin: 30px auto;
+                margin: 0 auto 30px;
                 background: white;
                 border-radius: 8px;
                 overflow: hidden;
@@ -131,13 +143,13 @@ def home():
             th {
                 background: #333;
                 color: white;
-                padding: 12px;
-                font-size: 14px;
+                padding: 12px 10px;
+                font-size: clamp(13px, 3.5vw, 15px);
             }
 
             td {
-                padding: 10px 16px;
-                font-size: 14px;
+                padding: 11px 12px;
+                font-size: clamp(13px, 3.5vw, 15px);
                 border-bottom: 1px solid rgba(0,0,0,0.07);
                 color: #222;
             }
@@ -148,9 +160,9 @@ def home():
                 background: #2a7a7a !important;
                 color: white;
                 font-weight: bold;
-                font-size: 14px;
+                font-size: clamp(13px, 3.5vw, 15px);
                 text-align: left;
-                padding: 10px 16px;
+                padding: 10px 12px;
             }
 
             .current-row td {
@@ -162,12 +174,18 @@ def home():
             .current-row td:first-child::before {
                 content: "▶ ";
             }
+
+            @media (max-width: 480px) {
+                body { padding: 8px; }
+            }
         </style>
     </head>
     <body>
         <h1>Spotové ceny elektřiny (Kč/kWh)</h1>
 
-        <canvas id="myChart" width="800" height="400"></canvas>
+        <div class="chart-wrapper">
+            <canvas id="myChart"></canvas>
+        </div>
 
         <div class="table-wrapper">
             <table>
@@ -274,6 +292,7 @@ def home():
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         legend: { position: 'top' },
                         annotation: { annotations },
