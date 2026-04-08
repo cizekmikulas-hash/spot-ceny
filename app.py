@@ -569,30 +569,7 @@ TEMPLATE = """<!DOCTYPE html>
                 plugins: {
                     legend: { display: false },
                     annotation: { annotations },
-                    tooltip: {
-                        backgroundColor: 'rgba(255,255,255,0.97)',
-                        titleColor: '#374151',
-                        bodyColor: '#6b7280',
-                        borderColor: '#e5e7eb',
-                        borderWidth: 1,
-                        padding: 10,
-                        cornerRadius: 10,
-                        titleFont: { family: 'Inter', weight: '600', size: 12 },
-                        bodyFont:  { family: 'Inter', size: 12 },
-                        callbacks: {
-                            title: function(context) {
-                                const idx = context[0].dataIndex;
-                                let dayLabel = day_labels[0];
-                                for (let i = 0; i < day_markers.length; i++) {
-                                    if (idx >= day_markers[i]) dayLabel = day_labels[i];
-                                }
-                                return dayLabel + '  ' + hours[idx];
-                            },
-                            label: function(context) {
-                                return ' ' + context.dataset.label + ': ' + context.parsed.y.toFixed(2) + ' Kč/kWh';
-                            }
-                        }
-                    }
+                    tooltip: { enabled: false },
                 },
                 scales: {
                     y: {
