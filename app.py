@@ -7,26 +7,7 @@ app = Flask(__name__)
 
 URL = "https://api.electree.cz/859182400102993847/prices"
 
-DISTRIBUCE_NT = 0.78
-DISTRIBUCE_VT = 2.78
-DPH = 1.21
-
 DNY_TYDNE = ["Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota", "Neděle"]
-
-def get_distribuce(hour):
-    if 4 <= hour < 8 or 15 <= hour < 19:
-        return DISTRIBUCE_NT
-    return DISTRIBUCE_VT
-
-def price_color(ratio):
-    """Map ratio 0..1 to green→yellow→red hex color."""
-    if ratio < 0.5:
-        r = int(255 * ratio * 2)
-        g = 200
-    else:
-        r = 220
-        g = int(200 * (1 - (ratio - 0.5) * 2))
-    return f"rgb({r},{g},70)"
 
 @app.route("/")
 def home():
@@ -36,53 +17,22 @@ def home():
     tz = pytz.timezone("Europe/Prague")
     now = datetime.now(tz).replace(tzinfo=None)
     current_hour = now.hour
+    current_date_str = now.date().isoformat()
 
-    # Pre-compute totals for all items
-    all_items = []
-    for item in data:
-        dt = datetime.strptime(item["timeLocalStart"], "%Y-%m-%d, %H:%M:%S")
-        spot = round(item["priceCZK"] / 1000, 2)
-        distribuce = get_distribuce(dt.hour)
-        total = round((spot + distribuce) * DPH, 2)
-        all_items.append((dt, spot, total))
-
-    all_totals = [x[2] for x in all_items]
-    min_price = min(all_totals)
-    max_price = max(all_totals)
-
-    # Today's stats
-    today_items = [(dt, spot, total) for dt, spot, total in all_items if dt.date() == now.date()]
-    today_totals = [(dt, total) for dt, _, total in today_items]
-
-    current_total = next((total for dt, total in today_totals if dt.hour == current_hour), None)
-    current_time_str = f"{current_hour:02d}:00"
-
-    cheapest_dt, cheapest_price = min(today_totals, key=lambda x: x[1]) if today_totals else (None, None)
-    priciest_dt, priciest_price = max(today_totals, key=lambda x: x[1]) if today_totals else (None, None)
-
-    hours = []
-    prices_spot = []
-    prices_total = []
+    raw_hours = []
     day_markers = []
     day_labels = []
-    table_data = []
-
     current_date = None
-    current_hour_index = 0
     day_label = ""
+    current_hour_index = 0
 
-    for i, (dt, spot, total) in enumerate(all_items):
-        time = dt.strftime("%H:%M")
-        is_current = (dt.date() == now.date() and dt.hour == current_hour)
-        is_nt = (4 <= dt.hour < 8 or 15 <= dt.hour < 19)
-        ratio = (total - min_price) / (max_price - min_price) if max_price != min_price else 0.5
-        bar_pct = round(ratio * 100)
-        color = price_color(ratio)
+    for i, item in enumerate(data):
+        dt = datetime.strptime(item["timeLocalStart"], "%Y-%m-%d, %H:%M:%S")
+        spot = round(item["priceCZK"] / 1000, 4)
+        date_str = dt.date().isoformat()
+        is_today = (dt.date() == now.date())
+        is_current = (is_today and dt.hour == current_hour)
 
-        if is_current:
-            current_hour_index = i
-
-        date_str = dt.date()
         if date_str != current_date:
             current_date = date_str
             day_name = DNY_TYDNE[dt.weekday()]
@@ -90,38 +40,26 @@ def home():
             day_markers.append(i)
             day_labels.append(day_label)
 
-        if dt.date() > now.date() or (dt.date() == now.date() and dt.hour >= current_hour):
-            if not table_data or table_data[-1].get("day_label") != day_label:
-                table_data.append({"type": "header", "label": day_label, "day_label": day_label})
-            table_data.append({
-                "type": "row",
-                "time": time,
-                "total": total,
-                "is_current": is_current,
-                "is_nt": is_nt,
-                "day_label": day_label,
-                "color": color,
-                "bar_pct": bar_pct,
-            })
+        if is_current:
+            current_hour_index = i
 
-        hours.append(time)
-        prices_spot.append(spot)
-        prices_total.append(total)
+        raw_hours.append({
+            "time": dt.strftime("%H:%M"),
+            "hour": dt.hour,
+            "spot": spot,
+            "dateStr": date_str,
+            "dayLabel": day_label,
+            "isToday": is_today,
+            "isCurrent": is_current,
+        })
 
     return render_template_string(TEMPLATE,
-        hours=hours,
-        prices_spot=prices_spot,
-        prices_total=prices_total,
+        raw_hours=raw_hours,
+        current_date_str=current_date_str,
+        current_hour=current_hour,
+        current_hour_index=current_hour_index,
         day_markers=day_markers,
         day_labels=day_labels,
-        table_data=table_data,
-        current_hour_index=current_hour_index,
-        current_total=current_total,
-        current_time_str=current_time_str,
-        cheapest_price=cheapest_price,
-        cheapest_time=f"{cheapest_dt.strftime('%H:%M')}" if cheapest_dt else "–",
-        priciest_price=priciest_price,
-        priciest_time=f"{priciest_dt.strftime('%H:%M')}" if priciest_dt else "–",
     )
 
 
@@ -146,14 +84,41 @@ TEMPLATE = """<!DOCTYPE html>
             padding: 24px 16px 40px;
         }
 
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
         .page-title {
             font-size: 13px;
             font-weight: 600;
             letter-spacing: 0.08em;
             text-transform: uppercase;
             color: #6b7280;
-            text-align: center;
-            margin-bottom: 20px;
+        }
+
+        .settings-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 6px 13px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #374151;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            transition: background 0.15s, border-color 0.15s;
+            flex-shrink: 0;
+        }
+        .settings-btn:hover {
+            background: #f9fafb;
+            border-color: #d1d5db;
         }
 
         .container {
@@ -179,7 +144,6 @@ TEMPLATE = """<!DOCTYPE html>
             padding: 18px 20px 16px;
             box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.06);
             border-left: 4px solid #d1d5db;
-            position: relative;
         }
 
         .card--current  { border-left-color: #1a1a2e; }
@@ -257,15 +221,31 @@ TEMPLATE = """<!DOCTYPE html>
             font-weight: 500;
         }
 
-        .legend-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            flex-shrink: 0;
+        .chart-toggle {
+            display: flex;
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 3px;
+            gap: 2px;
         }
-
-        .legend-dot--spot  { background: #60a5fa; }
-        .legend-dot--total { background: #f97316; }
+        .chart-toggle-btn {
+            padding: 5px 13px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            background: transparent;
+            color: #6b7280;
+            transition: background 0.15s, color 0.15s;
+            white-space: nowrap;
+        }
+        .chart-toggle-btn--active {
+            background: #ffffff;
+            color: #1a1a2e;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
 
         .chart-wrapper {
             position: relative;
@@ -340,9 +320,7 @@ TEMPLATE = """<!DOCTYPE html>
         .price-row:last-child { border-bottom: none; }
         .price-row:hover { background: #fafafa; }
 
-        .price-row--current {
-            background: #fffbeb;
-        }
+        .price-row--current { background: #fffbeb; }
         .price-row--current:hover { background: #fef3c7; }
 
         .hour-cell {
@@ -366,9 +344,7 @@ TEMPLATE = """<!DOCTYPE html>
             font-size: 10px;
         }
 
-        .bar-cell {
-            padding-right: 16px;
-        }
+        .bar-cell { padding-right: 16px; }
 
         .bar-track {
             height: 6px;
@@ -391,33 +367,152 @@ TEMPLATE = """<!DOCTYPE html>
         }
 
         .value-cell--current { color: #f59e0b; }
+
+        .price-row--nt { background: #eff6ff; }
+        .price-row--nt:hover { background: #dbeafe; }
+
+        .nt-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 1px 5px;
+            background: #3b82f6;
+            color: #ffffff;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            flex-shrink: 0;
+        }
+
+        /* ── MODAL ──────────────────────────────────────────── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .modal-card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 28px 24px 24px;
+            width: 100%;
+            max-width: 420px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+        }
+        .modal-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 20px;
+        }
+        .form-section { margin-bottom: 16px; }
+        .form-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: #9ca3af;
+            margin-bottom: 8px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            min-width: 0;
+        }
+        .form-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: #6b7280;
+        }
+        .form-input {
+            padding: 9px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            color: #1a1a2e;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .form-input:focus { border-color: #6366f1; }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .btn-save {
+            flex: 1;
+            padding: 10px 16px;
+            background: #1a1a2e;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-save:hover { background: #2d2d4a; }
+        .btn-cancel {
+            padding: 10px 16px;
+            background: #f3f4f6;
+            color: #374151;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-cancel:hover { background: #e5e7eb; }
     </style>
 </head>
 <body>
     <div class="container">
-        <p class="page-title">Spotové ceny elektřiny</p>
+        <div class="page-header">
+            <p class="page-title">Spotové ceny elektřiny</p>
+            <button class="settings-btn" onclick="openSettings()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                Nastavení
+            </button>
+        </div>
 
         <!-- TOP CARDS -->
         <div class="cards">
             <div class="card card--current">
-                <div class="card-label">Nyní &middot; {{ current_time_str }}</div>
-                <div class="card-price">{{ "%.2f"|format(current_total) if current_total is not none else "–" }}</div>
+                <div class="card-label">Nyní &middot; {{ "%02d"|format(current_hour) }}:00</div>
+                <div class="card-price" id="card-current-price">–</div>
                 <div class="card-unit">Kč/kWh</div>
                 <div class="card-sub">vč. distribuce a DPH</div>
             </div>
-
             <div class="card card--cheapest">
                 <div class="card-label">Nejlevnější dnes</div>
-                <div class="card-price">{{ "%.2f"|format(cheapest_price) if cheapest_price is not none else "–" }}</div>
+                <div class="card-price" id="card-cheapest-price">–</div>
                 <div class="card-unit">Kč/kWh</div>
-                <div class="card-sub">v {{ cheapest_time }} hod</div>
+                <div class="card-sub" id="card-cheapest-time">–</div>
             </div>
-
             <div class="card card--priciest">
                 <div class="card-label">Nejdražší dnes</div>
-                <div class="card-price">{{ "%.2f"|format(priciest_price) if priciest_price is not none else "–" }}</div>
+                <div class="card-price" id="card-priciest-price">–</div>
                 <div class="card-unit">Kč/kWh</div>
-                <div class="card-sub">v {{ priciest_time }} hod</div>
+                <div class="card-sub" id="card-priciest-time">–</div>
             </div>
         </div>
 
@@ -425,15 +520,9 @@ TEMPLATE = """<!DOCTYPE html>
         <div class="chart-card">
             <div class="chart-header">
                 <span class="chart-title">Průběh cen &middot; 48 hodin</span>
-                <div class="chart-legend">
-                    <div class="legend-item">
-                        <div class="legend-dot legend-dot--spot"></div>
-                        Spot
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-dot legend-dot--total"></div>
-                        Celkem vč. DPH
-                    </div>
+                <div class="chart-toggle">
+                    <button class="chart-toggle-btn" id="toggle-btn-0" onclick="setDataset(0)">Spot</button>
+                    <button class="chart-toggle-btn chart-toggle-btn--active" id="toggle-btn-1" onclick="setDataset(1)">Celkem vč. DPH</button>
                 </div>
             </div>
             <div class="chart-wrapper">
@@ -448,152 +537,360 @@ TEMPLATE = """<!DOCTYPE html>
                 <div class="table-head-cell">Cena</div>
                 <div class="table-head-cell" style="text-align:right">Kč/kWh</div>
             </div>
+            <div id="table-body"></div>
+        </div>
+    </div>
 
-            {% for row in table_data %}
-                {% if row.type == "header" %}
-                    <div class="day-header-row">
-                        <div class="day-dot"></div>
-                        <div class="day-text">{{ row.label }}</div>
+    <!-- SETTINGS MODAL -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-title">Nastavení cen</div>
+            <div class="form-section">
+                <div class="form-section-title">Distribuce (Kč/kWh)</div>
+                <p style="font-size:12px;color:#6b7280;margin-bottom:10px;line-height:1.5;">Zde vyplň součet ceny distribuce a dalších poplatků nad rámec ceny spotu bez DPH.</p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Cena NT</label>
+                        <input id="input-nt" class="form-input" type="number" step="0.01">
                     </div>
-                {% else %}
-                    <div class="price-row {{ 'price-row--current' if row.is_current else '' }}">
-                        <div class="hour-cell">
-                            {% if row.is_current %}
-                                <span class="play-icon">&#9654;</span>
-                                {{ row.time }}
-                                <span class="hour-now">nyní</span>
-                            {% else %}
-                                {{ row.time }}
-                            {% endif %}
-                        </div>
-                        <div class="bar-cell">
-                            <div class="bar-track">
-                                <div class="bar-fill" style="width:{{ row.bar_pct }}%; background:{{ row.color }};"></div>
-                            </div>
-                        </div>
-                        <div class="value-cell {{ 'value-cell--current' if row.is_current else '' }}">
-                            {{ "%.2f"|format(row.total) }} Kč/kWh
-                        </div>
+                    <div class="form-group">
+                        <label class="form-label">Cena VT</label>
+                        <input id="input-vt" class="form-input" type="number" step="0.01">
                     </div>
-                {% endif %}
-            {% endfor %}
+                </div>
+            </div>
+            <div class="form-section">
+                <div class="form-section-title">1. NT pásmo (hodiny, od–do)</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Začátek</label>
+                        <input id="input-nt1-start" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Konec</label>
+                        <input id="input-nt1-end" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                </div>
+            </div>
+            <div class="form-section">
+                <div class="form-section-title">2. NT pásmo (hodiny, od–do)</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Začátek</label>
+                        <input id="input-nt2-start" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Konec</label>
+                        <input id="input-nt2-end" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                </div>
+            </div>
+            <div class="form-section">
+                <div class="form-section-title">3. NT pásmo (hodiny, od–do)</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Začátek</label>
+                        <input id="input-nt3-start" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Konec</label>
+                        <input id="input-nt3-end" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                </div>
+            </div>
+            <div class="form-section">
+                <div class="form-section-title">4. NT pásmo (hodiny, od–do)</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Začátek</label>
+                        <input id="input-nt4-start" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Konec</label>
+                        <input id="input-nt4-end" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-save" onclick="saveAndApply()">Uložit a přepočítat</button>
+                <button class="btn-cancel" onclick="closeSettings()">Zrušit</button>
+            </div>
         </div>
     </div>
 
     <script>
-        const hours = {{ hours | tojson }};
-        const prices_spot = {{ prices_spot | tojson }};
-        const prices_total = {{ prices_total | tojson }};
-        const day_markers = {{ day_markers | tojson }};
-        const day_labels = {{ day_labels | tojson }};
-        const current_hour_index = {{ current_hour_index }};
+        var rawHours        = {{ raw_hours | tojson }};
+        var currentDateStr  = {{ current_date_str | tojson }};
+        var currentHour     = {{ current_hour }};
+        var currentHourIndex = {{ current_hour_index }};
+        var dayMarkers      = {{ day_markers | tojson }};
+        var dayLabels       = {{ day_labels | tojson }};
+        var pricesSpot      = rawHours.map(function(h) { return h.spot; });
 
-        const annotations = {};
+        // ── Settings ─────────────────────────────────────────
+        var DEFAULTS = { priceNT: 0.76, priceVT: 2.78,
+                         nt1Start: 4,  nt1End: 8,
+                         nt2Start: 15, nt2End: 19,
+                         nt3Start: 0,  nt3End: 0,
+                         nt4Start: 0,  nt4End: 0 };
 
-        day_markers.forEach((idx, i) => {
-            if (i === 0) return; // skip first, it's just the start
-            annotations['line' + i] = {
-                type: 'line',
-                xMin: idx - 0.5,
-                xMax: idx - 0.5,
-                borderColor: 'rgba(156, 163, 175, 0.5)',
-                borderWidth: 1.5,
-                borderDash: [5, 4],
+        function getSettings() {
+            try {
+                var stored = localStorage.getItem('spotSettings');
+                return stored ? Object.assign({}, DEFAULTS, JSON.parse(stored)) : Object.assign({}, DEFAULTS);
+            } catch(e) { return Object.assign({}, DEFAULTS); }
+        }
+
+        function saveSettings(s) {
+            localStorage.setItem('spotSettings', JSON.stringify(s));
+        }
+
+        // ── Helpers ───────────────────────────────────────────
+        function isNT(hour, s) {
+            return (s.nt1End > s.nt1Start && hour >= s.nt1Start && hour < s.nt1End) ||
+                   (s.nt2End > s.nt2Start && hour >= s.nt2Start && hour < s.nt2End) ||
+                   (s.nt3End > s.nt3Start && hour >= s.nt3Start && hour < s.nt3End) ||
+                   (s.nt4End > s.nt4Start && hour >= s.nt4Start && hour < s.nt4End);
+        }
+
+        function getDistribuce(hour, s) {
+            if ((s.nt1End > s.nt1Start && hour >= s.nt1Start && hour < s.nt1End) ||
+                (s.nt2End > s.nt2Start && hour >= s.nt2Start && hour < s.nt2End) ||
+                (s.nt3End > s.nt3Start && hour >= s.nt3Start && hour < s.nt3End) ||
+                (s.nt4End > s.nt4Start && hour >= s.nt4Start && hour < s.nt4End))
+                return s.priceNT;
+            return s.priceVT;
+        }
+
+        function priceColor(ratio) {
+            var r, g;
+            if (ratio < 0.5) { r = Math.round(255 * ratio * 2); g = 200; }
+            else { r = 220; g = Math.round(200 * (1 - (ratio - 0.5) * 2)); }
+            return 'rgb(' + r + ',' + g + ',70)';
+        }
+
+        // ── Chart ─────────────────────────────────────────────
+        var myChart = null;
+        var activeDataset = 1; // 0 = Spot, 1 = Celkem vč. DPH
+
+        function setDataset(idx) {
+            activeDataset = idx;
+            if (myChart) {
+                myChart.data.datasets[0].hidden = (idx !== 0);
+                myChart.data.datasets[1].hidden = (idx !== 1);
+                myChart.update();
+            }
+            document.getElementById('toggle-btn-0').classList.toggle('chart-toggle-btn--active', idx === 0);
+            document.getElementById('toggle-btn-1').classList.toggle('chart-toggle-btn--active', idx === 1);
+        }
+
+        function buildAnnotations() {
+            var ann = {};
+            dayMarkers.forEach(function(idx, i) {
+                if (i === 0) return;
+                ann['line' + i] = {
+                    type: 'line', xMin: idx - 0.5, xMax: idx - 0.5,
+                    borderColor: 'rgba(156,163,175,0.5)', borderWidth: 1.5, borderDash: [5,4],
+                    label: {
+                        display: true, content: dayLabels[i], position: 'start',
+                        backgroundColor: 'rgba(55,65,81,0.85)', color: 'white',
+                        font: { size: 11, weight: '600', family: 'Inter' },
+                        padding: { x: 8, y: 5 }, borderRadius: 6
+                    }
+                };
+            });
+            ann['current'] = {
+                type: 'line', xMin: currentHourIndex, xMax: currentHourIndex,
+                borderColor: 'rgba(245,158,11,0.9)', borderWidth: 2, borderDash: [4,4],
                 label: {
-                    display: true,
-                    content: day_labels[i],
-                    position: 'start',
-                    backgroundColor: 'rgba(55, 65, 81, 0.85)',
-                    color: 'white',
-                    font: { size: 11, weight: '600', family: 'Inter' },
-                    padding: { x: 8, y: 5 },
-                    borderRadius: 6
+                    display: true, content: 'Nyní', position: 'end',
+                    backgroundColor: 'rgba(245,158,11,0.9)', color: '#1a1a2e',
+                    font: { size: 11, weight: '700', family: 'Inter' },
+                    padding: { x: 8, y: 5 }, borderRadius: 6
                 }
             };
-        });
+            return ann;
+        }
 
-        annotations['current'] = {
-            type: 'line',
-            xMin: current_hour_index,
-            xMax: current_hour_index,
-            borderColor: 'rgba(245, 158, 11, 0.9)',
-            borderWidth: 2,
-            borderDash: [4, 4],
-            label: {
-                display: true,
-                content: 'Nyní',
-                position: 'end',
-                backgroundColor: 'rgba(245, 158, 11, 0.9)',
-                color: '#1a1a2e',
-                font: { size: 11, weight: '700', family: 'Inter' },
-                padding: { x: 8, y: 5 },
-                borderRadius: 6
-            }
-        };
-
-        const ctx = document.getElementById('myChart').getContext('2d');
-
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: hours,
-                datasets: [
-                    {
-                        label: 'Spot',
-                        data: prices_spot,
-                        borderColor: '#60a5fa',
-                        backgroundColor: 'rgba(96, 165, 250, 0.12)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                    },
-                    {
-                        label: 'Celkem vč. DPH',
-                        data: prices_total,
-                        borderColor: '#f97316',
-                        backgroundColor: 'rgba(249, 115, 22, 0.10)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: { display: false },
-                    annotation: { annotations },
-                    tooltip: { enabled: false },
-                },
-                scales: {
-                    y: {
-                        grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false },
-                        border: { display: false },
-                        ticks: {
-                            font: { family: 'Inter', size: 11 },
-                            color: '#9ca3af',
-                            callback: v => v.toFixed(1)
+        function initChart(allTotals, totalColors) {
+            var hours = rawHours.map(function(h) { return h.time; });
+            var ctx = document.getElementById('myChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: hours,
+                    datasets: [
+                        {
+                            label: 'Spot', data: pricesSpot,
+                            backgroundColor: 'rgba(91,155,213,0.8)',
+                            borderWidth: 0, borderRadius: 2,
+                            hidden: true
+                        },
+                        {
+                            label: 'Celkem vč. DPH', data: allTotals,
+                            backgroundColor: totalColors,
+                            borderWidth: 0, borderRadius: 2,
+                            hidden: false
                         }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        annotation: { annotations: buildAnnotations() },
+                        tooltip: { enabled: false }
                     },
-                    x: {
-                        grid: { display: false },
-                        border: { display: false },
-                        ticks: {
-                            font: { family: 'Inter', size: 11 },
-                            color: '#9ca3af',
-                            maxTicksLimit: 12,
-                            maxRotation: 0,
+                    scales: {
+                        y: {
+                            grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false },
+                            border: { display: false },
+                            ticks: { font: { family: 'Inter', size: 11 }, color: '#9ca3af',
+                                     callback: function(v) { return v.toFixed(1); } }
+                        },
+                        x: {
+                            grid: { display: false }, border: { display: false },
+                            ticks: { font: { family: 'Inter', size: 11 }, color: '#9ca3af',
+                                     maxTicksLimit: 12, maxRotation: 0 }
                         }
                     }
                 }
+            });
+        }
+
+        // ── Main recalculate ──────────────────────────────────
+        function recalculate() {
+            var s = getSettings();
+            var DPH = 1.21;
+
+            var computed = rawHours.map(function(h) {
+                var dist = getDistribuce(h.hour, s);
+                var total = Math.round((h.spot + dist) * DPH * 100) / 100;
+                return { time: h.time, hour: h.hour, dateStr: h.dateStr,
+                         dayLabel: h.dayLabel, isToday: h.isToday, isCurrent: h.isCurrent,
+                         dist: dist, total: total, isNT: isNT(h.hour, s) };
+            });
+
+            var allTotals = computed.map(function(c) { return c.total; });
+            var minTotal = Math.min.apply(null, allTotals);
+            var maxTotal = Math.max.apply(null, allTotals);
+
+            var totalColors = allTotals.map(function(v) {
+                var ratio = maxTotal !== minTotal ? (v - minTotal) / (maxTotal - minTotal) : 0.5;
+                return priceColor(ratio);
+            });
+
+            // Today stats
+            var currentItem = null, cheapest = null, priciest = null;
+            computed.forEach(function(c) {
+                if (!c.isToday) return;
+                if (c.isCurrent) currentItem = c;
+                if (!cheapest || c.total < cheapest.total) cheapest = c;
+                if (!priciest || c.total > priciest.total) priciest = c;
+            });
+
+            document.getElementById('card-current-price').textContent =
+                currentItem ? currentItem.total.toFixed(2) : '–';
+            document.getElementById('card-cheapest-price').textContent =
+                cheapest ? cheapest.total.toFixed(2) : '–';
+            document.getElementById('card-cheapest-time').textContent =
+                cheapest ? ('v ' + cheapest.time + ' hod') : '–';
+            document.getElementById('card-priciest-price').textContent =
+                priciest ? priciest.total.toFixed(2) : '–';
+            document.getElementById('card-priciest-time').textContent =
+                priciest ? ('v ' + priciest.time + ' hod') : '–';
+
+            // Build table
+            var tableRows = computed.filter(function(c) {
+                return c.dateStr > currentDateStr ||
+                       (c.dateStr === currentDateStr && c.hour >= currentHour);
+            });
+
+            var html = '';
+            var lastDayLabel = null;
+            tableRows.forEach(function(c) {
+                if (c.dayLabel !== lastDayLabel) {
+                    lastDayLabel = c.dayLabel;
+                    html += '<div class="day-header-row"><div class="day-dot"></div>' +
+                            '<div class="day-text">' + c.dayLabel + '</div></div>';
+                }
+                var ratio = maxTotal !== minTotal ? (c.total - minTotal) / (maxTotal - minTotal) : 0.5;
+                var barPct = Math.round(ratio * 100);
+                var color = priceColor(ratio);
+                var rowCls = 'price-row' + (c.isNT ? ' price-row--nt' : '') + (c.isCurrent ? ' price-row--current' : '');
+                var valCls = 'value-cell' + (c.isCurrent ? ' value-cell--current' : '');
+                var hourHtml = (c.isCurrent ? '<span class="play-icon">&#9654;</span>' : '') +
+                               c.time +
+                               (c.isCurrent ? '<span class="hour-now">nyní</span>' : '') +
+                               (c.isNT ? '<span class="nt-badge">NT</span>' : '');
+
+                html += '<div class="' + rowCls + '">' +
+                        '<div class="hour-cell">' + hourHtml + '</div>' +
+                        '<div class="bar-cell"><div class="bar-track">' +
+                        '<div class="bar-fill" style="width:' + barPct + '%;background:' + color + ';"></div>' +
+                        '</div></div>' +
+                        '<div class="' + valCls + '">' + c.total.toFixed(2) + ' Kč/kWh</div>' +
+                        '</div>';
+            });
+            document.getElementById('table-body').innerHTML = html;
+
+            // Chart
+            if (myChart === null) {
+                initChart(allTotals, totalColors);
+            } else {
+                myChart.data.datasets[1].data = allTotals;
+                myChart.data.datasets[1].backgroundColor = totalColors;
+                myChart.data.datasets[0].hidden = (activeDataset !== 0);
+                myChart.data.datasets[1].hidden = (activeDataset !== 1);
+                myChart.update();
             }
+        }
+
+        // ── Modal ─────────────────────────────────────────────
+        function openSettings() {
+            var s = getSettings();
+            document.getElementById('input-nt').value        = s.priceNT;
+            document.getElementById('input-vt').value        = s.priceVT;
+            document.getElementById('input-nt1-start').value = s.nt1Start;
+            document.getElementById('input-nt1-end').value   = s.nt1End;
+            document.getElementById('input-nt2-start').value = s.nt2Start;
+            document.getElementById('input-nt2-end').value   = s.nt2End;
+            document.getElementById('input-nt3-start').value = s.nt3Start;
+            document.getElementById('input-nt3-end').value   = s.nt3End;
+            document.getElementById('input-nt4-start').value = s.nt4Start;
+            document.getElementById('input-nt4-end').value   = s.nt4End;
+            document.getElementById('settings-modal').style.display = 'flex';
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').style.display = 'none';
+        }
+
+        function saveAndApply() {
+            function fi(id, fb) { var v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? fb : v; }
+            function ff(id, fb) { var v = parseFloat(document.getElementById(id).value); return isNaN(v) ? fb : v; }
+            saveSettings({
+                priceNT: ff('input-nt', 0.76),
+                priceVT: ff('input-vt', 2.78),
+                nt1Start: fi('input-nt1-start', 4),
+                nt1End:   fi('input-nt1-end',   8),
+                nt2Start: fi('input-nt2-start', 15),
+                nt2End:   fi('input-nt2-end',   19),
+                nt3Start: fi('input-nt3-start', 0),
+                nt3End:   fi('input-nt3-end',   0),
+                nt4Start: fi('input-nt4-start', 0),
+                nt4End:   fi('input-nt4-end',   0),
+            });
+            closeSettings();
+            recalculate();
+        }
+
+        document.getElementById('settings-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeSettings();
         });
+
+        recalculate();
     </script>
 </body>
 </html>
