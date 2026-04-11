@@ -611,6 +611,19 @@ TEMPLATE = """<!DOCTYPE html>
                     </div>
                 </div>
             </div>
+            <div class="form-section">
+                <div class="form-section-title">5. NT pásmo (hodiny, od–do)</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Začátek</label>
+                        <input id="input-nt5-start" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Konec</label>
+                        <input id="input-nt5-end" class="form-input" type="number" min="0" max="23" step="1">
+                    </div>
+                </div>
+            </div>
             <div class="modal-actions">
                 <button class="btn-save" onclick="saveAndApply()">Uložit a přepočítat</button>
                 <button class="btn-cancel" onclick="closeSettings()">Zrušit</button>
@@ -632,7 +645,8 @@ TEMPLATE = """<!DOCTYPE html>
                          nt1Start: 4,  nt1End: 8,
                          nt2Start: 15, nt2End: 19,
                          nt3Start: 0,  nt3End: 0,
-                         nt4Start: 0,  nt4End: 0 };
+                         nt4Start: 0,  nt4End: 0,
+                         nt5Start: 0,  nt5End: 0 };
 
         function getSettings() {
             try {
@@ -650,14 +664,16 @@ TEMPLATE = """<!DOCTYPE html>
             return (s.nt1End > s.nt1Start && hour >= s.nt1Start && hour < s.nt1End) ||
                    (s.nt2End > s.nt2Start && hour >= s.nt2Start && hour < s.nt2End) ||
                    (s.nt3End > s.nt3Start && hour >= s.nt3Start && hour < s.nt3End) ||
-                   (s.nt4End > s.nt4Start && hour >= s.nt4Start && hour < s.nt4End);
+                   (s.nt4End > s.nt4Start && hour >= s.nt4Start && hour < s.nt4End) ||
+                   (s.nt5End > s.nt5Start && hour >= s.nt5Start && hour < s.nt5End);
         }
 
         function getDistribuce(hour, s) {
             if ((s.nt1End > s.nt1Start && hour >= s.nt1Start && hour < s.nt1End) ||
                 (s.nt2End > s.nt2Start && hour >= s.nt2Start && hour < s.nt2End) ||
                 (s.nt3End > s.nt3Start && hour >= s.nt3Start && hour < s.nt3End) ||
-                (s.nt4End > s.nt4Start && hour >= s.nt4Start && hour < s.nt4End))
+                (s.nt4End > s.nt4Start && hour >= s.nt4Start && hour < s.nt4End) ||
+                (s.nt5End > s.nt5Start && hour >= s.nt5Start && hour < s.nt5End))
                 return s.priceNT;
             return s.priceVT;
         }
@@ -823,7 +839,7 @@ TEMPLATE = """<!DOCTYPE html>
                 var hourHtml = (c.isCurrent ? '<span class="play-icon">&#9654;</span>' : '') +
                                c.time +
                                (c.isCurrent ? '<span class="hour-now">nyní</span>' : '') +
-                               (c.isNT ? '<span class="nt-badge">NT</span>' : '');
+                               '';
 
                 html += '<div class="' + rowCls + '">' +
                         '<div class="hour-cell">' + hourHtml + '</div>' +
@@ -860,6 +876,8 @@ TEMPLATE = """<!DOCTYPE html>
             document.getElementById('input-nt3-end').value   = s.nt3End;
             document.getElementById('input-nt4-start').value = s.nt4Start;
             document.getElementById('input-nt4-end').value   = s.nt4End;
+            document.getElementById('input-nt5-start').value = s.nt5Start;
+            document.getElementById('input-nt5-end').value   = s.nt5End;
             document.getElementById('settings-modal').style.display = 'flex';
         }
 
@@ -881,6 +899,8 @@ TEMPLATE = """<!DOCTYPE html>
                 nt3End:   fi('input-nt3-end',   0),
                 nt4Start: fi('input-nt4-start', 0),
                 nt4End:   fi('input-nt4-end',   0),
+                nt5Start: fi('input-nt5-start', 0),
+                nt5End:   fi('input-nt5-end',   0),
             });
             closeSettings();
             recalculate();
